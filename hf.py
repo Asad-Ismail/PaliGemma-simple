@@ -30,7 +30,7 @@ def collate_fn(examples):
     images = [example["image"].convert("RGB") for example in examples]
     texts = [f"<image>{text}" for text in texts]
     tokens = processor(text=texts, images=images, suffix=labels,return_tensors="pt", padding="longest")
-    tokens = tokens.to(torch.bfloat16).to(device)
+    tokens = tokens.to(torch.bfloat16 if device == "cuda" else torch.float32).to(device)
     return tokens
 
 class VQADataset(Dataset):
