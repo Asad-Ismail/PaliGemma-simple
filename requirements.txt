@@ -1,1 +1,2 @@
 transformers
+debugpy>=1.6.7

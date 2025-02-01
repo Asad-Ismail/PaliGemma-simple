@@ -10,52 +10,60 @@ import logging
 from inference import generate_answer
 import os
 from tqdm import tqdm
-
+from fsspec.exceptions import FSTimeoutError
+import  aiohttp
 
 cache_dir="./hf_assets"
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Initialize model and processor
+model_id = "google/paligemma-3b-mix-224"
+processor = PaliGemmaProcessor.from_pretrained(model_id)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def collate_fn(examples):
+    texts = ["answer " + example["question"] for example in examples]
+    labels = [example['multiple_choice_answer'] for example in examples]
+    images = [example["image"].convert("RGB") for example in examples]
+    texts = [f"<image>{text}" for text in texts]
+    tokens = processor(text=texts, images=images, suffix=labels,return_tensors="pt", padding="longest")
+    tokens = tokens.to(torch.bfloat16).to(device)
+    return tokens
+
 class VQADataset(Dataset):
-    def __init__(self, dataset, processor):
+    def __init__(self, dataset):
         self.dataset = dataset
-        self.processor = processor
     
     def __len__(self):
         return len(self.dataset)
     
     def __getitem__(self, idx):
         item = self.dataset[idx]
-        image = Image.open(item['image'])
+        if isinstance(item['image'], Image.Image):
+            image = item['image']
+        else:
+            from io import BytesIO
+            image = Image.open(BytesIO(item['image']))
         
-        inputs = self.processor(
-            images=image,
-            text=item['question'],
-            return_tensors="pt",
-            padding=True
-        )
-        
-        # Remove batch dimension
-        for k, v in inputs.items():
-            inputs[k] = v.squeeze(0)
-            
-        inputs['labels'] = self.processor.tokenizer(
-            item['answer'],
-            return_tensors="pt",
-            padding=True
-        ).input_ids.squeeze(0)
-        
-        return inputs
+        return {
+            "image": image,
+            "question": item["question"],
+            "multiple_choice_answer": item["answer"]
+        }
+
 
 def load_vqa_dataset():
-    """Load and prepare the VQA dataset."""
+    """Load and prepare a small subset of the VQA dataset."""
     ds = load_dataset('HuggingFaceM4/VQAv2', 
                      split="train",
                      cache_dir=cache_dir, 
                      download_mode="reuse_dataset_if_exists",  
-                     trust_remote_code=True)
+                     trust_remote_code=True,
+                     # Required for large datasets
+                     storage_options={'client_kwargs': {'timeout': aiohttp.ClientTimeout(total=3600)}})
     
     # Remove unnecessary columns
     cols_remove = ["question_type", "answers", "answer_type", "image_id", "question_id"]
@@ -66,7 +74,7 @@ def load_vqa_dataset():
     return ds["train"], ds["test"]
 
 def train_paligemma(
-    model_id="google/paligemma-3b-pt-224",
+    model_id="google/paligemma-3b-mix-224",
     train_dataset=None,
     val_dataset=None,
     num_epochs=2,
@@ -84,8 +92,7 @@ def train_paligemma(
     # Create checkpoint directory
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    # Initialize model and processor
-    processor = PaliGemmaProcessor.from_pretrained(model_id)
+    # Initialize model (processor is now global)
     model = PaliGemmaForConditionalGeneration.from_pretrained(
         model_id, 
         torch_dtype=torch.bfloat16 if fp16 else torch.float32
@@ -98,15 +105,16 @@ def train_paligemma(
         param.requires_grad = True
     
     # Create dataset objects
-    train_dataset = VQADataset(train_dataset, processor)
-    val_dataset = VQADataset(val_dataset, processor) if val_dataset else None
+    train_dataset = VQADataset(train_dataset)
+    val_dataset = VQADataset(val_dataset) if val_dataset else None
     
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
-        num_workers=4
+        num_workers=4,
+        collate_fn=collate_fn
     )
     
     if val_dataset:
@@ -115,7 +123,8 @@ def train_paligemma(
             batch_size=batch_size,
             shuffle=False,
             pin_memory=True,
-            num_workers=4
+            num_workers=4,
+            collate_fn=collate_fn
         )
     
     # Setup optimizer and scheduler
@@ -204,7 +213,7 @@ def train_paligemma(
 
 
 if __name__ == "__main__":
-    train = False
+    train = True
     if train:
         # Load dataset
         train_ds, val_ds = load_vqa_dataset()

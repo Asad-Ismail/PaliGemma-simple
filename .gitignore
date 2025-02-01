@@ -171,3 +171,4 @@ cython_debug/
 .pypirc
 hf_assets/
 hf_dataset/
+.vscode/
