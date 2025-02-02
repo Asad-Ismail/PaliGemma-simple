@@ -29,8 +29,8 @@ def load_coco_subset(train_ann_path, val_ann_path, images_dir):
             image_id = ann['image_id']
             bbox = ann['bbox']  # [x, y, width, height]
             category_id = ann['category_id']
-            f_path= os.path.exists(os.path.join(images_dir,img_dir_sfx,image_id_to_path[image_id]))
-            #print(f"Image exist? {os.path.exists(f_path)}")
+            f_path= os.path.join(images_dir,img_dir_sfx,image_id_to_path[image_id])
+            print(f"Image exist? {os.path.exists(f_path)}")
 
             sample = {
                 "image_id": image_id,
@@ -136,7 +136,7 @@ def collate_fn(examples):
     return tokens
 
 class DetectionDataset(Dataset):
-    def __init__(self, dataset, images_dir):
+    def __init__(self, dataset):
         self.dataset = dataset
 
     def __len__(self):
@@ -146,7 +146,7 @@ class DetectionDataset(Dataset):
         item = self.dataset[idx]
 
         # Load image
-        image_path = item["image_path"]
+        image_path = item["image_path"][0]
         image = Image.open(image_path).convert("RGB")
 
         # Convert bbox format: [x, y, width, height] -> [x1, y1, x2, y2]
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     # Load dataset
     train_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_train2017_subset.json"
     val_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_val2017_subset.json"
-    images_dir = "/home/asad/dev/GLIP/DATASET/coco/train2017/"  
+    images_dir = "/home/asad/dev/GLIP/DATASET/coco/"  
 
     # Load custom COCO subset
     dataset_dict = load_coco_subset(train_ann_path, val_ann_path, images_dir)
@@ -346,7 +346,6 @@ if __name__ == "__main__":
     model, processor = train_paligemma(
         train_dataset=dataset_dict["train"],
         val_dataset=dataset_dict["val"],
-        images_dir=images_dir,
         num_epochs=5,
         batch_size=2,
         learning_rate=2e-5,
