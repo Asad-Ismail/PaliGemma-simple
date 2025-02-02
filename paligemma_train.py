@@ -11,10 +11,11 @@ from inference import generate_answer
 import os
 from tqdm import tqdm
 import torch.cuda.amp as amp
+from utils import analyze_model_memory 
 import  aiohttp
+from transformers import BitsAndBytesConfig
+from peft import get_peft_model, LoraConfig
 
-
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128,expandable_segments:True'
 
 cache_dir="./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -95,6 +96,13 @@ def train_paligemma(
     os.makedirs(checkpoint_dir, exist_ok=True)
     
     # Initialize model (processor is now global)
+    # use this for Q-LoRa
+    #bnb_config = BitsAndBytesConfig(
+    #        load_in_4bit=True,
+    #        bnb_4bit_quant_type="nf4",
+    #        bnb_4bit_compute_type=torch.bfloat16
+    #)
+    #quantization_config=bnb_config
     model = PaliGemmaForConditionalGeneration.from_pretrained(
         model_id, 
         cache_dir=cache_dir,
@@ -102,21 +110,32 @@ def train_paligemma(
         torch_dtype=torch.bfloat16 if fp16 else torch.float32
     ).to(device)
     
-    # Freeze vision tower, unfreeze projector
-    for param in model.vision_tower.parameters():
-        param.requires_grad = False
-    for param in model.multi_modal_projector.parameters():
-        param.requires_grad = True
+    # Freeze vision tower, unfreeze projector use this for Full finetuning minus vision tower and projector
+    #for param in model.vision_tower.parameters():
+    #    param.requires_grad = False
+    #for param in model.multi_modal_projector.parameters():
+    #     param.requires_grad = False
+
+    lora_config = LoraConfig(
+        r=8,
+        target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
+        task_type="CAUSAL_LM",
+        inference_mode=False
+    )
+
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
     
-    # Create dataset objects
+    # memory_analysis = analyze_model_memory(model)
+
     train_dataset = VQADataset(train_dataset)
     val_dataset = VQADataset(val_dataset) if val_dataset else None
     
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True,
+        shuffle=False,
+        pin_memory=False,
         num_workers=0,
         #num_workers=4,
         collate_fn=collate_fn
@@ -127,7 +146,7 @@ def train_paligemma(
             val_dataset,
             batch_size=batch_size,
             shuffle=False,
-            pin_memory=True,
+            pin_memory=False,
             num_workers=0,
             #num_workers=4,
             collate_fn=collate_fn
@@ -152,10 +171,12 @@ def train_paligemma(
     global_step = 0
     best_val_loss = float('inf')
 
-
+    
+    # Enable input gradients before applying LoRA
+    model.enable_input_require_grads()
     # Enable memory efficient attention
     model.config.use_memory_efficient_attention = True
-    
+    model.config.use_cache = False  # Required for gradient checkpointing
     # Enable gradient checkpointing
     model.gradient_checkpointing_enable()
     
@@ -167,6 +188,7 @@ def train_paligemma(
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}")
         
         for batch_idx, batch in enumerate(progress_bar):
+            torch.cuda.empty_cache()
             # Move batch to device
             batch = {k: v.to(device) for k, v in batch.items()}
             

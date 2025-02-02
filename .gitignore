@@ -172,3 +172,5 @@ cython_debug/
 hf_assets/
 hf_dataset/
 .vscode/
+paligemma_checkpoints/
+
