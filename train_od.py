@@ -9,6 +9,7 @@ import logging
 import os
 from tqdm import tqdm
 from peft import get_peft_model, LoraConfig
+from utils import visualize_ground_truth, visualize_predictions
 
 cache_dir = "./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -121,7 +122,8 @@ def train_paligemma(
     gradient_accumulation_steps=4,
     warmup_steps=100,
     checkpoint_dir="checkpoints",
-    fp16=True
+    fp16=True,
+    visualize_every_n_epochs=1
 ):
     """Train PaLI-GEMMA model for object detection task."""
     
@@ -243,6 +245,10 @@ def train_paligemma(
                 best_val_loss = avg_val_loss
                 model.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
                 processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
+        
+        if (epoch + 1) % visualize_every_n_epochs == 0 and val_dataset:
+            visualize_ground_truth(val_loader, output_dir="output/gt_visualizations", epoch=epoch + 1)
+            visualize_predictions(model, processor, val_loader, output_dir="output/pred_visualizations", epoch=epoch + 1)
     
     return model, processor
 

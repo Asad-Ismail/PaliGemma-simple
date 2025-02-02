@@ -1,3 +1,11 @@
+
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import ImageDraw
+import os
+import torch
+from train_od import device
+
 def analyze_model_memory(model):
     """
     Analyzes model parameters and estimates memory usage.
@@ -85,3 +93,84 @@ def analyze_model_memory(model):
         'total_memory': param_memory + optimizer_memory + gradient_memory + activation_memory,
         'module_params': module_params
     }
+
+
+
+def visualize_ground_truth(dataloader, output_dir="output/gt_visualizations", epoch=0):
+    """Visualize ground truth bounding boxes and save images."""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for batch_idx, batch in enumerate(dataloader):
+        images = batch["image"]
+        boxes_list = batch["boxes"]
+        labels_list = batch["labels"]
+        
+        for idx, (image, boxes, labels) in enumerate(zip(images, boxes_list, labels_list)):
+            # Convert image to PIL format
+            img = image.convert("RGB")
+            draw = ImageDraw.Draw(img)
+            
+            for box, label in zip(boxes, labels):
+                draw.rectangle(box, outline="red", width=2)
+                draw.text((box[0], box[1]), str(label), fill="red")
+            
+            # Save the image
+            save_path = os.path.join(output_dir, f"epoch_{epoch}_batch_{batch_idx}_img_{idx}.png")
+            img.save(save_path)
+            print(f"Saved GT visualization: {save_path}")
+
+
+
+
+def visualize_predictions(model, processor, dataloader, output_dir="output/pred_visualizations", epoch=0):
+    """Visualize model predictions and save images."""
+    os.makedirs(output_dir, exist_ok=True)
+    model.eval()
+    
+    def parse_output(text):
+        """Parse the model's output string into bounding boxes and labels."""
+        parts = text.split(" ; ")
+        boxes = []
+        labels = []
+        
+        for part in parts:
+            if "<loc" not in part:
+                continue
+            locs = part.split(" ")[0]
+            label = int(part.split(" ")[-1])
+            xmin, ymin, xmax, ymax = [int(loc[5:9]) for loc in locs.split("<loc")[1:]]
+            boxes.append([xmin, ymin, xmax, ymax])
+            labels.append(label)
+        
+        return boxes, labels
+    
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(dataloader):
+            images = batch["image"]
+            batch = {k: v.to(device) for k, v in batch.items()}
+            
+            # Generate predictions
+            outputs = model.generate(
+                **batch,
+                max_length=128,
+                num_beams=5,
+                temperature=0.7
+            )
+            decoded_outputs = [processor.decode(output, skip_special_tokens=True) for output in outputs]
+            
+            for idx, (image, output_text) in enumerate(zip(images, decoded_outputs)):
+                # Parse the output
+                boxes, labels = parse_output(output_text)
+                
+                # Convert image to PIL format
+                img = image.convert("RGB")
+                draw = ImageDraw.Draw(img)
+                
+                for box, label in zip(boxes, labels):
+                    draw.rectangle(box, outline="blue", width=2)
+                    draw.text((box[0], box[1]), str(label), fill="blue")
+                
+                # Save the image
+                save_path = os.path.join(output_dir, f"epoch_{epoch}_batch_{batch_idx}_img_{idx}.png")
+                img.save(save_path)
+                print(f"Saved prediction visualization: {save_path}")
