@@ -11,6 +11,52 @@ from tqdm import tqdm
 from peft import get_peft_model, LoraConfig
 from utils import visualize_ground_truth, visualize_predictions
 
+
+from datasets import DatasetDict, load_dataset
+import json
+from PIL import Image
+import os
+
+def load_coco_subset(train_ann_path, val_ann_path, images_dir):
+    """Load the custom COCO subset as a Hugging Face dataset."""
+    def load_coco_data(ann_path):
+        with open(ann_path, 'r') as f:
+            coco_data = json.load(f)
+
+        # Create a list of samples
+        samples = []
+        image_id_to_path = {img['id']: img['file_name'] for img in coco_data['images']}
+        category_id_to_name = {cat['id']: cat['name'] for cat in coco_data['categories']}
+
+        for ann in coco_data['annotations']:
+            image_id = ann['image_id']
+            bbox = ann['bbox']  # [x, y, width, height]
+            category_id = ann['category_id']
+
+            sample = {
+                "image_id": image_id,
+                "image_path": os.path.join(images_dir, image_id_to_path[image_id]),
+                "bbox": bbox,
+                "category_id": category_id,
+                "category_name": category_id_to_name[category_id]
+            }
+            samples.append(sample)
+
+        return samples
+
+    # Load train and validation data
+    train_data = load_coco_data(train_ann_path)
+    val_data = load_coco_data(val_ann_path)
+
+    # Convert to Hugging Face Dataset
+    dataset_dict = DatasetDict({
+        "train": Dataset.from_list(train_data),
+        "val": Dataset.from_list(val_data)
+    })
+
+    return dataset_dict
+
+
 cache_dir = "./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -75,31 +121,32 @@ def collate_fn(examples):
     return tokens
 
 class DetectionDataset(Dataset):
-    def __init__(self, dataset):
+    def __init__(self, dataset, images_dir):
         self.dataset = dataset
-    
+        self.images_dir = images_dir
+
     def __len__(self):
         return len(self.dataset)
-    
+
     def __getitem__(self, idx):
         item = self.dataset[idx]
-        
-        # Convert annotations to boxes and labels
-        boxes = []
-        labels = []
-        for ann in item['annotations']:
-            # bbox format: [x, y, width, height] -> convert to [x1, y1, x2, y2]
-            bbox = ann['bbox']
-            boxes.append([
-                bbox[0],
-                bbox[1],
-                bbox[0] + bbox[2],
-                bbox[1] + bbox[3]
-            ])
-            labels.append(ann['category_id'])
-        
+
+        # Load image
+        image_path = os.path.join(self.images_dir, item["image_path"])
+        image = Image.open(image_path).convert("RGB")
+
+        # Convert bbox format: [x, y, width, height] -> [x1, y1, x2, y2]
+        bbox = item["bbox"]
+        boxes = [[
+            bbox[0],
+            bbox[1],
+            bbox[0] + bbox[2],
+            bbox[1] + bbox[3]
+        ]]
+        labels = [item["category_id"]]
+
         return {
-            "image": item["image"],
+            "image": image,
             "boxes": boxes,
             "labels": labels
         }
@@ -161,11 +208,13 @@ def train_paligemma(
     if val_dataset:
         val_loader = DataLoader(
             val_dataset,
-            batch_size=batch_size,
+            batch_size=1,
             shuffle=False,
             num_workers=0,
             collate_fn=collate_fn
         )
+        visualize_ground_truth(val_loader, output_dir="output/gt_visualizations", epoch=epoch)
+    
     
     optimizer = AdamW(
         model.parameters(),
@@ -269,7 +318,16 @@ def inference(model, processor, image_path):
 
 if __name__ == "__main__":
     # Load dataset
-    train_ds, val_ds = load_balloon_dataset()
+    train_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_train2017_subset.json"
+    val_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_val2017_subset.json"
+    images_dir = "/home/asad/dev/GLIP/DATASET/coco/images"  # Update this path if needed
+
+    # Load custom COCO subset
+    dataset_dict = load_coco_subset(train_ann_path, val_ann_path, images_dir)
+
+    # Create DetectionDatasets
+    train_ds = DetectionDataset(dataset_dict["train"], images_dir)
+    val_ds = DetectionDataset(dataset_dict["val"], images_dir)
     
     # Train model
     model, processor = train_paligemma(

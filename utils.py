@@ -4,7 +4,10 @@ import numpy as np
 from PIL import ImageDraw
 import os
 import torch
-from train_od import device
+
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 def analyze_model_memory(model):
     """
