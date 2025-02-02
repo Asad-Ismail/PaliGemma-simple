@@ -10,15 +10,18 @@ import logging
 from inference import generate_answer
 import os
 from tqdm import tqdm
-from fsspec.exceptions import FSTimeoutError
+import torch.cuda.amp as amp
 import  aiohttp
+
+
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128,expandable_segments:True'
 
 cache_dir="./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Initialize model and processor
 model_id = "google/paligemma-3b-mix-224"
-processor = PaliGemmaProcessor.from_pretrained(model_id)
+processor = PaliGemmaProcessor.from_pretrained(model_id, cache_dir=cache_dir,local_files_only=False)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +33,7 @@ def collate_fn(examples):
     images = [example["image"].convert("RGB") for example in examples]
     texts = [f"<image>{text}" for text in texts]
     tokens = processor(text=texts, images=images, suffix=labels,return_tensors="pt", padding="longest")
-    tokens = tokens.to(torch.bfloat16 if device == "cuda" else torch.float32).to(device)
+    tokens = tokens.to(torch.bfloat16 if device == "cuda" else torch.float32)
     return tokens
 
 class VQADataset(Dataset):
@@ -51,7 +54,7 @@ class VQADataset(Dataset):
         return {
             "image": image,
             "question": item["question"],
-            "multiple_choice_answer": item["answer"]
+            "multiple_choice_answer": item["multiple_choice_answer"]
         }
 
 
@@ -78,13 +81,12 @@ def train_paligemma(
     train_dataset=None,
     val_dataset=None,
     num_epochs=2,
-    batch_size=16,
+    batch_size=2,
     learning_rate=2e-5,
     weight_decay=1e-6,
     gradient_accumulation_steps=4,
     warmup_steps=100,
     checkpoint_dir="checkpoints",
-    device="cuda",
     fp16=True
 ):
     """Train PaLI-GEMMA model for VQA task."""
@@ -95,6 +97,8 @@ def train_paligemma(
     # Initialize model (processor is now global)
     model = PaliGemmaForConditionalGeneration.from_pretrained(
         model_id, 
+        cache_dir=cache_dir,
+        local_files_only=False,
         torch_dtype=torch.bfloat16 if fp16 else torch.float32
     ).to(device)
     
@@ -113,7 +117,8 @@ def train_paligemma(
         batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
-        num_workers=4,
+        num_workers=0,
+        #num_workers=4,
         collate_fn=collate_fn
     )
     
@@ -123,7 +128,8 @@ def train_paligemma(
             batch_size=batch_size,
             shuffle=False,
             pin_memory=True,
-            num_workers=4,
+            num_workers=0,
+            #num_workers=4,
             collate_fn=collate_fn
         )
     
@@ -145,6 +151,13 @@ def train_paligemma(
     # Training loop
     global_step = 0
     best_val_loss = float('inf')
+
+
+    # Enable memory efficient attention
+    model.config.use_memory_efficient_attention = True
+    
+    # Enable gradient checkpointing
+    model.gradient_checkpointing_enable()
     
     for epoch in range(num_epochs):
         model.train()
@@ -223,14 +236,12 @@ if __name__ == "__main__":
             train_dataset=train_ds,
             val_dataset=val_ds,
             num_epochs=2,
-            batch_size=16,
+            batch_size=2,
             learning_rate=2e-5,
             checkpoint_dir="paligemma_checkpoints"
         )
     else:
-        #device = "cuda" if torch.cuda.is_available() else "cpu"
-        device="cpu"
-        model_id =  "google/paligemma-3b-mix-224"
+        #model_id =  "google/paligemma-3b-mix-224"
         model = PaliGemmaForConditionalGeneration.from_pretrained(model_id, cache_dir=cache_dir,
         local_files_only=False,torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32 ).to(device)
         processor = PaliGemmaProcessor.from_pretrained(model_id, cache_dir=cache_dir,
