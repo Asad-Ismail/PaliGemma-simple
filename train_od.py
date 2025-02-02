@@ -3,23 +3,20 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
-from datasets import load_dataset
 from PIL import Image
 import logging
 import os
 from tqdm import tqdm
 from peft import get_peft_model, LoraConfig
 from utils import visualize_ground_truth, visualize_predictions
-
-
 from datasets import DatasetDict, load_dataset
 import json
-from PIL import Image
-import os
+
+from datasets import DatasetDict, Dataset
 
 def load_coco_subset(train_ann_path, val_ann_path, images_dir):
     """Load the custom COCO subset as a Hugging Face dataset."""
-    def load_coco_data(ann_path):
+    def load_coco_data(ann_path, img_dir_sfx):
         with open(ann_path, 'r') as f:
             coco_data = json.load(f)
 
@@ -32,10 +29,12 @@ def load_coco_subset(train_ann_path, val_ann_path, images_dir):
             image_id = ann['image_id']
             bbox = ann['bbox']  # [x, y, width, height]
             category_id = ann['category_id']
+            f_path= os.path.exists(os.path.join(images_dir,img_dir_sfx,image_id_to_path[image_id]))
+            #print(f"Image exist? {os.path.exists(f_path)}")
 
             sample = {
                 "image_id": image_id,
-                "image_path": os.path.join(images_dir, image_id_to_path[image_id]),
+                "image_path": f_path,
                 "bbox": bbox,
                 "category_id": category_id,
                 "category_name": category_id_to_name[category_id]
@@ -45,17 +44,33 @@ def load_coco_subset(train_ann_path, val_ann_path, images_dir):
         return samples
 
     # Load train and validation data
-    train_data = load_coco_data(train_ann_path)
-    val_data = load_coco_data(val_ann_path)
+    train_data = load_coco_data(train_ann_path,img_dir_sfx="train2017")
+    val_data = load_coco_data(val_ann_path,img_dir_sfx="val2017")
 
-    # Convert to Hugging Face Dataset
+    # Convert to Hugging Face Dataset using from_dict
+    train_dataset = Dataset.from_dict({
+        "image_id": [item["image_id"] for item in train_data],
+        "image_path": [item["image_path"] for item in train_data],
+        "bbox": [item["bbox"] for item in train_data],
+        "category_id": [item["category_id"] for item in train_data],
+        "category_name": [item["category_name"] for item in train_data]
+    })
+
+    val_dataset = Dataset.from_dict({
+        "image_id": [item["image_id"] for item in val_data],
+        "image_path": [item["image_path"] for item in val_data],
+        "bbox": [item["bbox"] for item in val_data],
+        "category_id": [item["category_id"] for item in val_data],
+        "category_name": [item["category_name"] for item in val_data]
+    })
+
+    # Combine into a DatasetDict
     dataset_dict = DatasetDict({
-        "train": Dataset.from_list(train_data),
-        "val": Dataset.from_list(val_data)
+        "train": train_dataset,
+        "val": val_dataset
     })
 
     return dataset_dict
-
 
 cache_dir = "./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -123,7 +138,6 @@ def collate_fn(examples):
 class DetectionDataset(Dataset):
     def __init__(self, dataset, images_dir):
         self.dataset = dataset
-        self.images_dir = images_dir
 
     def __len__(self):
         return len(self.dataset)
@@ -132,7 +146,7 @@ class DetectionDataset(Dataset):
         item = self.dataset[idx]
 
         # Load image
-        image_path = os.path.join(self.images_dir, item["image_path"])
+        image_path = item["image_path"]
         image = Image.open(image_path).convert("RGB")
 
         # Convert bbox format: [x, y, width, height] -> [x1, y1, x2, y2]
@@ -174,26 +188,7 @@ def train_paligemma(
 ):
     """Train PaLI-GEMMA model for object detection task."""
     
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    
-    model = PaliGemmaForConditionalGeneration.from_pretrained(
-        model_id, 
-        cache_dir=cache_dir,
-        local_files_only=False,
-        torch_dtype=torch.bfloat16 if fp16 else torch.float32
-    ).to(device)
-    
-    # Configure LoRA
-    lora_config = LoraConfig(
-        r=8,
-        target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
-        task_type="CAUSAL_LM",
-        inference_mode=False
-    )
 
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
-    
     train_dataset = DetectionDataset(train_dataset)
     val_dataset = DetectionDataset(val_dataset) if val_dataset else None
     
@@ -213,7 +208,28 @@ def train_paligemma(
             num_workers=0,
             collate_fn=collate_fn
         )
-        visualize_ground_truth(val_loader, output_dir="output/gt_visualizations", epoch=epoch)
+        visualize_ground_truth(val_loader, output_dir="output/gt_visualizations", epoch=0)
+    
+
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    model = PaliGemmaForConditionalGeneration.from_pretrained(
+        model_id, 
+        cache_dir=cache_dir,
+        local_files_only=False,
+        torch_dtype=torch.bfloat16 if fp16 else torch.float32
+    ).to(device)
+    
+    # Configure LoRA
+    lora_config = LoraConfig(
+        r=8,
+        target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
+        task_type="CAUSAL_LM",
+        inference_mode=False
+    )
+
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
     
     
     optimizer = AdamW(
@@ -320,19 +336,17 @@ if __name__ == "__main__":
     # Load dataset
     train_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_train2017_subset.json"
     val_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_val2017_subset.json"
-    images_dir = "/home/asad/dev/GLIP/DATASET/coco/images"  # Update this path if needed
+    images_dir = "/home/asad/dev/GLIP/DATASET/coco/train2017/"  
 
     # Load custom COCO subset
     dataset_dict = load_coco_subset(train_ann_path, val_ann_path, images_dir)
 
-    # Create DetectionDatasets
-    train_ds = DetectionDataset(dataset_dict["train"], images_dir)
-    val_ds = DetectionDataset(dataset_dict["val"], images_dir)
     
     # Train model
     model, processor = train_paligemma(
-        train_dataset=train_ds,
-        val_dataset=val_ds,
+        train_dataset=dataset_dict["train"],
+        val_dataset=dataset_dict["val"],
+        images_dir=images_dir,
         num_epochs=5,
         batch_size=2,
         learning_rate=2e-5,
