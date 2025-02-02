@@ -5,12 +5,9 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
 from datasets import load_dataset
 from PIL import Image
-import requests
 import logging
-from inference import generate_answer
 import os
 from tqdm import tqdm
-import torch.cuda.amp as amp
 from utils import analyze_model_memory 
 import  aiohttp
 from transformers import BitsAndBytesConfig
@@ -248,54 +245,17 @@ def train_paligemma(
 
 
 if __name__ == "__main__":
-    train = True
-    if train:
-        # Load dataset
-        train_ds, val_ds = load_vqa_dataset()
-        
-        # Train model
-        model, processor = train_paligemma(
-            train_dataset=train_ds,
-            val_dataset=val_ds,
-            num_epochs=2,
-            batch_size=2,
-            learning_rate=2e-5,
-            checkpoint_dir="paligemma_checkpoints"
-        )
-    else:
-        #model_id =  "google/paligemma-3b-mix-224"
-        model = PaliGemmaForConditionalGeneration.from_pretrained(model_id, cache_dir=cache_dir,
-        local_files_only=False,torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32 ).to(device)
-        processor = PaliGemmaProcessor.from_pretrained(model_id, cache_dir=cache_dir,
-        local_files_only=False)
-        
-        # Single image example
-        prompt = "What is on the flower?"
-        image_file = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg?download=true"
-        raw_image = Image.open(requests.get(image_file, stream=True).raw)
-        
-        answer = generate_answer(model, processor, raw_image, prompt, device)
-        print(f"Single image answer: {answer}")
-
-        '''
-        # Image pair example
-        model_id = "google/paligemma-3b-ft-nlvr2-448"  # checkpoint tuned for multiple images
-        model = PaliGemmaForConditionalGeneration.from_pretrained(model_id)
-        processor = PaliGemmaProcessor.from_pretrained(model_id)
-        prompt = "answer en Which of the two pictures shows a snowman, first or second?"
-        stop_sign_image = Image.open(
-            requests.get("https://www.ilankelman.org/stopsigns/australia.jpg", stream=True).raw
-        )
-        snow_image = Image.open(
-            requests.get(
-                "https://huggingface.co/microsoft/kosmos-2-patch14-224/resolve/main/snowman.jpg", 
-                stream=True
-            ).raw
-        )
-        answer = generate_answer(model, processor, [snow_image, stop_sign_image], prompt)
-        print(f"Dual image answer: {answer}")
+    # Load dataset
+    train_ds, val_ds = load_vqa_dataset()
     
-        '''
-
+    # Train model
+    model, processor = train_paligemma(
+        train_dataset=train_ds,
+        val_dataset=val_ds,
+        num_epochs=2,
+        batch_size=2,
+        learning_rate=2e-5,
+        checkpoint_dir="paligemma_checkpoints"
+    )
 
     
