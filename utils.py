@@ -161,7 +161,6 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
             
             for part in parts:
                 try:
-                    print(part)
                     # Find coordinates and following text
                     match = re.search(coords_pattern, part.strip())
                     if not match:
@@ -195,14 +194,14 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
             return [], []
     
     with torch.no_grad():
-        for sample in dataset:
+        for idx,sample in enumerate(dataset):
             image = sample["image"]
             gt_boxes = sample["boxes"]
             gt_labels = sample["labels"]
             
             # Get original and target sizes
             orig_size = image.size[::-1]  # (h, w)
-
+            target_size = (224, 224)
 
             prefix= f"detect {' ; '.join(str(l) for l in sorted(set(gt_labels)))}"
             l_prefix = len(prefix)
@@ -226,25 +225,26 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
             )
             decoded_output = processor.decode(outputs[0], skip_special_tokens=True)[l_prefix:]
             
-            # Parse the output (will get boxes in target size coordinates)
-            pred_boxes, pred_labels = parse_output(decoded_output, orig_size)
+            # Parse the output (will get boxes in target size coordinates) first get boxes in target size then resize to original size
+            pred_boxes, pred_labels = parse_output(decoded_output, target_size)
+            pred_boxes = resize_boxes(pred_boxes, target_size, orig_size)
             
             # Draw on image
             img = image.convert("RGB")
             draw = ImageDraw.Draw(img)
             
-            # Draw ground truth in red
+            # Draw ground truth in green
             for box, label in zip(gt_boxes, gt_labels):
-                draw.rectangle(box.numpy(), outline="red", width=2)
-                draw.text((box[0], box[1]), f"GT:{label}", fill="green")
+                draw.rectangle(box.numpy(), outline="green", width=2)
+                draw.text((box[0], box[1]), f"{label}", fill="green")
             
             # Draw predictions in blue
             for box, label in zip(pred_boxes, pred_labels):
                 draw.rectangle(box, outline="blue", width=2)
-                draw.text((box[0], box[1]), f"Pred:{label}", fill="blue")
+                draw.text((box[0], box[1]), f"{label}", fill="blue")
             
             # Save the image
-            save_path = os.path.join(output_dir, f"epoch_{epoch}_comparison.png")
+            save_path = os.path.join(output_dir, f"{idx}_comparison.png")
             img.save(save_path)
             print(f"Saved visualization with both GT and predictions: {save_path}")
 
