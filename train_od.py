@@ -10,6 +10,23 @@ from tqdm import tqdm
 from peft import get_peft_model, LoraConfig
 from utils import visualize_ground_truth, visualize_predictions
 import json
+from utils import resize_boxes
+
+
+cache_dir = "./hf_assets"
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+# Initialize model and processor
+model_id = "google/paligemma-3b-mix-224"
+processor = PaliGemmaProcessor.from_pretrained(model_id, cache_dir=cache_dir, local_files_only=False)
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+
 
 def load_coco_subset(train_ann_path, val_ann_path, images_dir):
     """Load COCO subset annotations."""
@@ -46,16 +63,7 @@ def load_coco_subset(train_ann_path, val_ann_path, images_dir):
     val_data = load_split(val_ann_path, "val2017")
     return train_data, val_data
 
-cache_dir = "./hf_assets"
-device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Initialize model and processor
-model_id = "google/paligemma-3b-mix-224"
-processor = PaliGemmaProcessor.from_pretrained(model_id, cache_dir=cache_dir, local_files_only=False)
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def get_location_token(coord, scale_factor):
     """Convert coordinate to location token index using PaLI-GEMMA scaling.
@@ -77,20 +85,6 @@ def box_to_location_tokens(box, width, height):
         get_location_token(box[3], height)   # ymax
     ]
 
-def resize_boxes(boxes, orig_size, new_size):
-    """Resize boxes to match new image size."""
-    orig_h, orig_w = orig_size
-    new_h, new_w = new_size
-    
-    w_scale = new_w / orig_w
-    h_scale = new_h / orig_h
-    
-    return [[
-        box[0] * w_scale,
-        box[1] * h_scale,
-        box[2] * w_scale,
-        box[3] * h_scale
-    ] for box in boxes]
 
 class DetectionDataset(Dataset):
     """Pure PyTorch Dataset for object detection."""
@@ -115,9 +109,6 @@ def collate_fn(examples):
     images = [ex['image'] for ex in examples]
     boxes = [ex['boxes'] for ex in examples]
     labels = [ex['labels'] for ex in examples]
-    for l in labels:
-        if len(set(l))==2:
-            print("kk")
 
     orig_sizes = [img.size[::-1] for img in images]  # (h, w)
     target_size = (224, 224)
@@ -286,8 +277,7 @@ def train_paligemma(
                 model.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
                 processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
         
-        if (epoch + 1) % visualize_every_n_epochs == 0 and val_dataset:
-            visualize_ground_truth(val_dataset, output_dir="output/gt_visualizations", epoch=epoch + 1)
+        if (epoch) % visualize_every_n_epochs == 0 and val_dataset:
             visualize_predictions(model, processor, val_loader, output_dir="output/pred_visualizations", epoch=epoch + 1)
     
     return model, processor
