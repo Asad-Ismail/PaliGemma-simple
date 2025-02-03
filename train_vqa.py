@@ -141,7 +141,7 @@ def train_paligemma(
     if val_dataset:
         val_loader = DataLoader(
             val_dataset,
-            batch_size=1,
+            batch_size=batch_size,
             shuffle=False,
             pin_memory=False,
             num_workers=0,
@@ -221,6 +221,7 @@ def train_paligemma(
             # Validate periodically
             if global_step % 10 == 0:
                 if val_dataset:
+                    print("Validating...")
                     model.eval()
                     total_val_loss = 0
                     val_steps = 0
@@ -231,6 +232,7 @@ def train_paligemma(
                             outputs = model(**batch)
                             total_val_loss += outputs.loss.item()
                             val_steps += 1
+                            break
                     
                     avg_val_loss = total_val_loss / val_steps
                     logger.info(f"Validation loss: {avg_val_loss:.4f}")

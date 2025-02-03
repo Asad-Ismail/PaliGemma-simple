@@ -191,9 +191,10 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
         # Generate predictions
         outputs = model.generate(
             **batch,
-            max_length=128,
+            max_new_tokens=100,
             num_beams=5,
-            temperature=0.4
+            early_stopping=True
+            #temperature=0.4
         )
         decoded_output = processor.decode(outputs[0], skip_special_tokens=True)
         
@@ -262,7 +263,7 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
             # Generate prediction
             outputs = model.generate(
                 **inputs,
-                max_length=50,
+                max_new_tokens=50,
                 num_beams=3,
                 early_stopping=True
             )
