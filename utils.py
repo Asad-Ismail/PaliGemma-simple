@@ -263,6 +263,8 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
                 early_stopping=True
             )
             predicted_answer = processor.decode(outputs[0], skip_special_tokens=True)
+            q_len = "answer " + len(sample["question"])
+            predicted_answer = predicted_answer[q_len:]
             
             # Plot without displaying
             plt.imshow(sample["image"])
