@@ -173,7 +173,7 @@ def train_paligemma(
             num_workers=0,
             collate_fn=collate_fn
         )
-        visualize_ground_truth(val_dataset, output_dir="output/gt_visualizations", epoch=0)
+        #visualize_ground_truth(val_dataset, output_dir="output/gt_visualizations", epoch=0)
     
 
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -218,6 +218,10 @@ def train_paligemma(
     
     global_step = 0
     best_val_loss = float('inf')
+
+    # Create visualization directory
+    viz_dir = "visualizations"
+    os.makedirs(viz_dir, exist_ok=True)
     
     for epoch in range(num_epochs):
         model.train()
@@ -251,33 +255,32 @@ def train_paligemma(
             })
             
             if global_step % 100 == 0:
-                checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint-{global_step}")
-                model.save_pretrained(checkpoint_path)
-                processor.save_pretrained(checkpoint_path)
-        
-        # Validation
-        if val_dataset:
-            model.eval()
-            total_val_loss = 0
-            val_steps = 0
-            
-            with torch.no_grad():
-                for batch in tqdm(val_loader, desc="Validation"):
-                    batch = {k: v.to(device) for k, v in batch.items()}
-                    outputs = model(**batch)
-                    total_val_loss += outputs.loss.item()
-                    val_steps += 1
-            
-            avg_val_loss = total_val_loss / val_steps
-            logger.info(f"Validation loss: {avg_val_loss:.4f}")
-            
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                model.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
-                processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
-        
-        if (epoch) % visualize_every_n_epochs == 0 and val_dataset:
-            visualize_predictions_od(model, processor, val_loader, output_dir="output/pred_visualizations", epoch=epoch + 1)
+                # Validation
+                if val_dataset:
+                    model.eval()
+                    total_val_loss = 0
+                    val_steps = 0
+                    
+                    with torch.no_grad():
+                        for batch in tqdm(val_loader, desc="Validation"):
+                            batch = {k: v.to(device) for k, v in batch.items()}
+                            outputs = model(**batch)
+                            total_val_loss += outputs.loss.item()
+                            val_steps += 1
+                            break
+                    
+                    avg_val_loss = total_val_loss / val_steps
+                    logger.info(f"Validation loss: {avg_val_loss:.4f}")
+                    
+                    if avg_val_loss < best_val_loss:
+                        best_val_loss = avg_val_loss
+                        model.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
+                        processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
+
+                    # Generate and save visualizations
+                    viz_subdir = os.path.join(viz_dir, f"step_{global_step}")
+                    os.makedirs(viz_subdir, exist_ok=True)
+                    visualize_predictions_od(model, processor, val_dataset, output_dir=viz_subdir, epoch=epoch + 1)
     
     return model, processor
 

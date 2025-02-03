@@ -4,6 +4,7 @@ from PIL import ImageDraw
 import os
 import torch
 import random
+import re
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -146,79 +147,106 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
     model.eval()
     
     def parse_output(text, target_size):
-        """Parse the model's output string into bounding boxes and labels."""
-        parts = text.split(" ; ")
-        boxes = []
-        labels = []
-        
-        for part in parts:
-            if "<loc" not in part:
-                continue
-            locs = part.split(" ")[0]
-            label = int(part.split(" ")[-1])
+        """
+        Parse the model's output string into bounding boxes and labels.
+        Handles format like '<loc0628><loc0909><loc0678><loc0992> dog'
+        """
+        try:
+            parts = text.strip().split(" ; ")
+            boxes = []
+            labels = []
             
-            # Convert from 1024-scale back to target size
-            coords = [int(loc[5:9]) for loc in locs.split("<loc")[1:]]
-            xmin = (coords[0] / 1024) * target_size[1]  # width
-            ymin = (coords[1] / 1024) * target_size[0]  # height
-            xmax = (coords[2] / 1024) * target_size[1]  # width
-            ymax = (coords[3] / 1024) * target_size[0]  # height
+            # Regex pattern for matching sequences of 4 loc tokens followed by any text
+            coords_pattern = r'<loc(\d{4})><loc(\d{4})><loc(\d{4})><loc(\d{4})>(.*?(?=\s*;|$))'
             
-            boxes.append([xmin, ymin, xmax, ymax])
-            labels.append(label)
-        
-        return boxes, labels
+            for part in parts:
+                try:
+                    print(part)
+                    # Find coordinates and following text
+                    match = re.search(coords_pattern, part.strip())
+                    if not match:
+                        continue
+                    
+                    # Extract coordinates from first 4 groups
+                    coords = [int(x) for x in match.groups()[:4]]
+                    
+                    # Extract class name from the remaining text (last group)
+                    class_text = match.groups()[-1].strip()
+                    
+                    # Convert coordinates from 1024-scale to target size
+                    xmin = max(0, min((coords[0] / 1024) * target_size[1], target_size[1]))
+                    ymin = max(0, min((coords[1] / 1024) * target_size[0], target_size[0]))
+                    xmax = max(0, min((coords[2] / 1024) * target_size[1], target_size[1]))
+                    ymax = max(0, min((coords[3] / 1024) * target_size[0], target_size[0]))
+                    
+                    # Ensure box coordinates are valid
+                    if xmin < xmax and ymin < ymax:
+                        boxes.append([xmin, ymin, xmax, ymax])
+                        labels.append(class_text)
+                    
+                except Exception as e:
+                    print(f"Warning: Could not parse part '{part}': {str(e)}")
+                    continue
+            
+            return boxes, labels
+            
+        except Exception as e:
+            print(f"Warning: Failed to parse output text '{text}': {str(e)}")
+            return [], []
     
     with torch.no_grad():
-        image = dataset["image"]
-        gt_boxes = dataset["boxes"]
-        gt_labels = dataset["labels"]
-        
-        # Get original and target sizes
-        orig_size = image.size[::-1]  # (h, w)
+        for sample in dataset:
+            image = sample["image"]
+            gt_boxes = sample["boxes"]
+            gt_labels = sample["labels"]
+            
+            # Get original and target sizes
+            orig_size = image.size[::-1]  # (h, w)
 
 
-        prefix= f"<image>detect {' ; '.join(str(l) for l in sorted(set(gt_labels)))}"
-        # Prepare input for model
-        batch = processor(
-            text=[prefix],
-            images=[image],
-            return_tensors="pt",
-            padding="longest"
-        ).to(device)
-        
-        batch = {k: v.to(model.device) for k, v in batch.items()}
-        # Generate predictions
-        outputs = model.generate(
-            **batch,
-            max_new_tokens=100,
-            num_beams=5,
-            early_stopping=True
-            #temperature=0.4
-        )
-        decoded_output = processor.decode(outputs[0], skip_special_tokens=True)
-        
-        # Parse the output (will get boxes in target size coordinates)
-        pred_boxes, pred_labels = parse_output(decoded_output, orig_size)
-        
-        # Draw on image
-        img = image.convert("RGB")
-        draw = ImageDraw.Draw(img)
-        
-        # Draw ground truth in red
-        for box, label in zip(gt_boxes, gt_labels):
-            draw.rectangle(box, outline="red", width=2)
-            draw.text((box[0], box[1]), f"GT:{label}", fill="red")
-        
-        # Draw predictions in blue
-        for box, label in zip(pred_boxes, pred_labels):
-            draw.rectangle(box, outline="blue", width=2)
-            draw.text((box[0], box[1]), f"Pred:{label}", fill="blue")
-        
-        # Save the image
-        save_path = os.path.join(output_dir, f"epoch_{epoch}_comparison.png")
-        img.save(save_path)
-        print(f"Saved visualization with both GT and predictions: {save_path}")
+            prefix= f"detect {' ; '.join(str(l) for l in sorted(set(gt_labels)))}"
+            l_prefix = len(prefix)
+            prefix=f"<image>{prefix}"
+            # Prepare input for model
+            batch = processor(
+                text=[prefix],
+                images=[image],
+                return_tensors="pt",
+                padding="longest"
+            ).to(device)
+            
+            batch = {k: v.to(model.device) for k, v in batch.items()}
+            # Generate predictions
+            outputs = model.generate(
+                **batch,
+                max_new_tokens=100,
+                num_beams=5,
+                early_stopping=True
+                #temperature=0.4
+            )
+            decoded_output = processor.decode(outputs[0], skip_special_tokens=True)[l_prefix:]
+            
+            # Parse the output (will get boxes in target size coordinates)
+            pred_boxes, pred_labels = parse_output(decoded_output, orig_size)
+            
+            # Draw on image
+            img = image.convert("RGB")
+            draw = ImageDraw.Draw(img)
+            
+            # Draw ground truth in red
+            for box, label in zip(gt_boxes, gt_labels):
+                draw.rectangle(box.numpy(), outline="red", width=2)
+                draw.text((box[0], box[1]), f"GT:{label}", fill="green")
+            
+            # Draw predictions in blue
+            for box, label in zip(pred_boxes, pred_labels):
+                draw.rectangle(box, outline="blue", width=2)
+                draw.text((box[0], box[1]), f"Pred:{label}", fill="blue")
+            
+            # Save the image
+            save_path = os.path.join(output_dir, f"epoch_{epoch}_comparison.png")
+            img.save(save_path)
+            print(f"Saved visualization with both GT and predictions: {save_path}")
 
 
 def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save_dir="visualization_results", device="cuda"):

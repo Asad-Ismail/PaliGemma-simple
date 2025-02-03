@@ -218,7 +218,7 @@ def train_paligemma(
                 'lr': optimizer.param_groups[0]['lr']
             })
             
-            # Validate periodically
+            # Validate periodically Training epoch can be too long so we validate periodically
             if global_step % 10000 == 0:
                 if val_dataset:
                     print("Validating...")
@@ -232,13 +232,13 @@ def train_paligemma(
                             outputs = model(**batch)
                             total_val_loss += outputs.loss.item()
                             val_steps += 1
-                            break
+                            
                     
                     avg_val_loss = total_val_loss / val_steps
                     logger.info(f"Validation loss: {avg_val_loss:.4f}")
                     
                     # Generate and save visualizations
-                    viz_subdir = os.path.join(viz_dir, f"epoch_{epoch+1}")
+                    viz_subdir = os.path.join(viz_dir, f"step_{global_step}")
                     os.makedirs(viz_subdir, exist_ok=True)
 
                     visualize_predictions_vqa(
