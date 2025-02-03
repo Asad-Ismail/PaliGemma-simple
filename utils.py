@@ -226,6 +226,10 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
     Visualize ground truth and predictions for a fixed set of validation samples across epochs.
     Each sample is saved as a separate image without displaying.
     """
+    # Set random seed for reproducibility
+    random.seed(42)
+    torch.manual_seed(42)
+    
     # Use non-interactive backend
     plt.switch_backend('Agg')
     os.makedirs(save_dir, exist_ok=True)
@@ -263,7 +267,7 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
                 early_stopping=True
             )
             predicted_answer = processor.decode(outputs[0], skip_special_tokens=True)
-            q_len = "answer " + len(sample["question"])
+            q_len = len("answer ") + len(sample["question"])
             predicted_answer = predicted_answer[q_len:]
             
             # Plot without displaying

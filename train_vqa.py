@@ -219,7 +219,7 @@ def train_paligemma(
             })
             
             # Validate periodically
-            if global_step % 10 == 0:
+            if global_step % 10000 == 0:
                 if val_dataset:
                     print("Validating...")
                     model.eval()
@@ -245,7 +245,7 @@ def train_paligemma(
                         model=model,
                         processor=processor,
                         val_dataset=val_dataset,
-                        num_samples=4,
+                        num_samples=100,
                         save_dir=viz_subdir,
                         device=device
                     )
