@@ -8,11 +8,14 @@ from PIL import Image
 import logging
 import os
 from tqdm import tqdm
-from utils import analyze_model_memory 
+from utils import analyze_model_memory, visualize_predictions_vqa
 import  aiohttp
 from transformers import BitsAndBytesConfig
 from peft import get_peft_model, LoraConfig
-
+import matplotlib.pyplot as plt
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 cache_dir="./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -21,9 +24,6 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model_id = "google/paligemma-3b-mix-224"
 processor = PaliGemmaProcessor.from_pretrained(model_id, cache_dir=cache_dir,local_files_only=False)
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def collate_fn(examples):
     texts = ["answer " + example["question"] for example in examples]
@@ -133,15 +133,15 @@ def train_paligemma(
         batch_size=batch_size,
         shuffle=False,
         pin_memory=False,
-        num_workers=0,
-        #num_workers=4,
+        #num_workers=0,
+        num_workers=4,
         collate_fn=collate_fn
     )
     
     if val_dataset:
         val_loader = DataLoader(
             val_dataset,
-            batch_size=batch_size,
+            batch_size=1,
             shuffle=False,
             pin_memory=False,
             num_workers=0,
@@ -176,6 +176,11 @@ def train_paligemma(
     model.config.use_cache = False  # Required for gradient checkpointing
     # Enable gradient checkpointing
     model.gradient_checkpointing_enable()
+    
+    
+    # Create visualization directory
+    viz_dir = os.path.join(checkpoint_dir, "visualizations")
+    os.makedirs(viz_dir, exist_ok=True)
     
     for epoch in range(num_epochs):
         model.train()
@@ -213,33 +218,40 @@ def train_paligemma(
                 'lr': optimizer.param_groups[0]['lr']
             })
             
-            # Save checkpoint periodically
-            if global_step % 1000 == 0:
-                checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint-{global_step}")
-                model.save_pretrained(checkpoint_path)
-                processor.save_pretrained(checkpoint_path)
-        
-        # Validation
-        if val_dataset:
-            model.eval()
-            total_val_loss = 0
-            val_steps = 0
-            
-            with torch.no_grad():
-                for batch in tqdm(val_loader, desc="Validation"):
-                    batch = {k: v.to(device) for k, v in batch.items()}
-                    outputs = model(**batch)
-                    total_val_loss += outputs.loss.item()
-                    val_steps += 1
-            
-            avg_val_loss = total_val_loss / val_steps
-            logger.info(f"Validation loss: {avg_val_loss:.4f}")
-            
-            # Save best model
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                model.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
-                processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
+            # Validate periodically
+            if global_step % 10 == 0:
+                if val_dataset:
+                    model.eval()
+                    total_val_loss = 0
+                    val_steps = 0
+                    
+                    with torch.no_grad():
+                        for batch in tqdm(val_loader, desc="Validation"):
+                            batch = {k: v.to(device) for k, v in batch.items()}
+                            outputs = model(**batch)
+                            total_val_loss += outputs.loss.item()
+                            val_steps += 1
+                    
+                    avg_val_loss = total_val_loss / val_steps
+                    logger.info(f"Validation loss: {avg_val_loss:.4f}")
+                    
+                    # Generate and save visualizations
+                    viz_subdir = os.path.join(viz_dir, f"epoch_{epoch+1}")
+                    os.makedirs(viz_subdir, exist_ok=True)
+                    visualize_predictions_vqa(
+                        model=model,
+                        processor=processor,
+                        val_dataset=val_dataset,
+                        num_samples=4,
+                        save_dir=viz_subdir,
+                        device=device
+                    )
+                    
+                    # Save best model
+                    if avg_val_loss < best_val_loss:
+                        best_val_loss = avg_val_loss
+                        model.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
+                        processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
     
     return model, processor
 

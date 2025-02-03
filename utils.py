@@ -1,9 +1,9 @@
-
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import ImageDraw
 import os
 import torch
+import random
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -140,7 +140,7 @@ def visualize_ground_truth(dataloader, output_dir="output/gt_visualizations", ep
 
 
 
-def visualize_predictions(model, processor, dataset, output_dir="output/pred_visualizations", epoch=0):
+def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_visualizations", epoch=0):
     """Visualize model predictions and ground truth on the same image."""
     os.makedirs(output_dir, exist_ok=True)
     model.eval()
@@ -218,3 +218,65 @@ def visualize_predictions(model, processor, dataset, output_dir="output/pred_vis
         save_path = os.path.join(output_dir, f"epoch_{epoch}_comparison.png")
         img.save(save_path)
         print(f"Saved visualization with both GT and predictions: {save_path}")
+
+
+def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save_dir="visualization_results", device="cuda"):
+    """
+    Visualize ground truth and predictions for a fixed set of validation samples across epochs.
+    Each sample is saved as a separate image.
+    
+    Args:
+        model: The PaLI-GEMMA model
+        processor: The PaLI-GEMMA processor
+        val_dataset: Validation dataset
+        num_samples: Number of samples to visualize
+        save_dir: Directory to save visualization results
+        device: Device to run inference on
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # If this is the first call, randomly select and save indices
+    indices_file = os.path.join(save_dir, "viz_indices.pt")
+    if not os.path.exists(indices_file):
+        indices = random.sample(range(len(val_dataset)), num_samples)
+        torch.save(indices, indices_file)
+    else:
+        indices = torch.load(indices_file)
+    
+    model.eval()
+    
+    with torch.no_grad():
+        for idx, sample_idx in enumerate(indices):
+            plt.figure(figsize=(15, 10))
+            sample = val_dataset[sample_idx]
+            
+            # Prepare input
+            text = f"<image>answer {sample['question']}"
+            inputs = processor(
+                text=text,
+                images=sample["image"],
+                return_tensors="pt"
+            )
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            # Generate prediction
+            outputs = model.generate(
+                **inputs,
+                max_length=50,
+                num_beams=3,
+                early_stopping=True
+            )
+            predicted_answer = processor.decode(outputs[0], skip_special_tokens=True)
+            
+            # Plot individual image
+            plt.imshow(sample["image"])
+            plt.axis('off')
+            plt.title(f'Question: {sample["question"]}\n'
+                     f'Ground Truth: {sample["multiple_choice_answer"]}\n'
+                     f'Prediction: {predicted_answer}',
+                     fontsize=12, pad=10)
+            
+            # Save individual image
+            save_path = os.path.join(save_dir, f"sample_{idx+1}_predictions.png")
+            plt.savefig(save_path, bbox_inches='tight', dpi=300)
+            plt.close()

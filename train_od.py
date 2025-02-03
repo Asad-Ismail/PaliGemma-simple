@@ -8,9 +8,13 @@ import logging
 import os
 from tqdm import tqdm
 from peft import get_peft_model, LoraConfig
-from utils import visualize_ground_truth, visualize_predictions
+from utils import visualize_ground_truth, visualize_predictions_od
 import json
 from utils import resize_boxes
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 cache_dir = "./hf_assets"
@@ -20,11 +24,6 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # Initialize model and processor
 model_id = "google/paligemma-3b-mix-224"
 processor = PaliGemmaProcessor.from_pretrained(model_id, cache_dir=cache_dir, local_files_only=False)
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 
 
 
@@ -278,7 +277,7 @@ def train_paligemma(
                 processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
         
         if (epoch) % visualize_every_n_epochs == 0 and val_dataset:
-            visualize_predictions(model, processor, val_loader, output_dir="output/pred_visualizations", epoch=epoch + 1)
+            visualize_predictions_od(model, processor, val_loader, output_dir="output/pred_visualizations", epoch=epoch + 1)
     
     return model, processor
 
