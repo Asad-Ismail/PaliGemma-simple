@@ -240,6 +240,7 @@ def train_paligemma(
                     # Generate and save visualizations
                     viz_subdir = os.path.join(viz_dir, f"epoch_{epoch+1}")
                     os.makedirs(viz_subdir, exist_ok=True)
+                    
                     visualize_predictions_vqa(
                         model=model,
                         processor=processor,

@@ -224,16 +224,10 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
 def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save_dir="visualization_results", device="cuda"):
     """
     Visualize ground truth and predictions for a fixed set of validation samples across epochs.
-    Each sample is saved as a separate image.
-    
-    Args:
-        model: The PaLI-GEMMA model
-        processor: The PaLI-GEMMA processor
-        val_dataset: Validation dataset
-        num_samples: Number of samples to visualize
-        save_dir: Directory to save visualization results
-        device: Device to run inference on
+    Each sample is saved as a separate image without displaying.
     """
+    # Use non-interactive backend
+    plt.switch_backend('Agg')
     os.makedirs(save_dir, exist_ok=True)
     
     # If this is the first call, randomly select and save indices
@@ -248,7 +242,8 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
     
     with torch.no_grad():
         for idx, sample_idx in enumerate(indices):
-            plt.figure(figsize=(15, 10))
+            # Create a new figure for each sample
+            fig = plt.figure(figsize=(15, 10))
             sample = val_dataset[sample_idx]
             
             # Prepare input
@@ -269,7 +264,7 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
             )
             predicted_answer = processor.decode(outputs[0], skip_special_tokens=True)
             
-            # Plot individual image
+            # Plot without displaying
             plt.imshow(sample["image"])
             plt.axis('off')
             plt.title(f'Question: {sample["question"]}\n'
@@ -277,7 +272,7 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
                      f'Prediction: {predicted_answer}',
                      fontsize=12, pad=10)
             
-            # Save individual image
+            # Save and close figure
             save_path = os.path.join(save_dir, f"sample_{idx+1}_predictions.png")
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
-            plt.close()
+            plt.close(fig)
