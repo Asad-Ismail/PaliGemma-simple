@@ -9,68 +9,42 @@ import os
 from tqdm import tqdm
 from peft import get_peft_model, LoraConfig
 from utils import visualize_ground_truth, visualize_predictions
-from datasets import DatasetDict, load_dataset
 import json
 
-from datasets import DatasetDict, Dataset
-
 def load_coco_subset(train_ann_path, val_ann_path, images_dir):
-    """Load the custom COCO subset as a Hugging Face dataset."""
-    def load_coco_data(ann_path, img_dir_sfx):
+    """Load COCO subset annotations."""
+    def load_split(ann_path, img_dir_sfx):
         with open(ann_path, 'r') as f:
-            coco_data = json.load(f)
+            data = json.load(f)
+        
+        # Create lookup dictionaries
+        images = {img['id']: img['file_name'] for img in data['images']}
+        categories = {cat['id']: cat['name'] for cat in data['categories']}
+        
+        # Group annotations by image
+        annotations = []  # Change to list of dicts instead of dict
+        image_anns = {}
+        
+        # First group annotations by image
+        for ann in data['annotations']:
+            img_id = ann['image_id']
+            if img_id not in image_anns:
+                image_anns[img_id] = {
+                    'image_path': os.path.join(images_dir, img_dir_sfx, images[img_id]),
+                    'boxes': [],
+                    'categories': []
+                }
+            x, y, w, h = ann['bbox']
+            image_anns[img_id]['boxes'].append([x, y, x + w, y + h])
+            image_anns[img_id]['categories'].append(categories[ann['category_id']])
+        
+        # Convert to list
+        annotations = list(image_anns.values())
+        return annotations
 
-        # Create a list of samples
-        samples = []
-        image_id_to_path = {img['id']: img['file_name'] for img in coco_data['images']}
-        category_id_to_name = {cat['id']: cat['name'] for cat in coco_data['categories']}
-
-        for ann in coco_data['annotations']:
-            image_id = ann['image_id']
-            bbox = ann['bbox']  # [x, y, width, height]
-            category_id = ann['category_id']
-            f_path= os.path.join(images_dir,img_dir_sfx,image_id_to_path[image_id])
-            print(f"Image exist? {os.path.exists(f_path)}")
-
-            sample = {
-                "image_id": image_id,
-                "image_path": f_path,
-                "bbox": bbox,
-                "category_id": category_id,
-                "category_name": category_id_to_name[category_id]
-            }
-            samples.append(sample)
-
-        return samples
-
-    # Load train and validation data
-    train_data = load_coco_data(train_ann_path,img_dir_sfx="train2017")
-    val_data = load_coco_data(val_ann_path,img_dir_sfx="val2017")
-
-    # Convert to Hugging Face Dataset using from_dict
-    train_dataset = Dataset.from_dict({
-        "image_id": [item["image_id"] for item in train_data],
-        "image_path": [item["image_path"] for item in train_data],
-        "bbox": [item["bbox"] for item in train_data],
-        "category_id": [item["category_id"] for item in train_data],
-        "category_name": [item["category_name"] for item in train_data]
-    })
-
-    val_dataset = Dataset.from_dict({
-        "image_id": [item["image_id"] for item in val_data],
-        "image_path": [item["image_path"] for item in val_data],
-        "bbox": [item["bbox"] for item in val_data],
-        "category_id": [item["category_id"] for item in val_data],
-        "category_name": [item["category_name"] for item in val_data]
-    })
-
-    # Combine into a DatasetDict
-    dataset_dict = DatasetDict({
-        "train": train_dataset,
-        "val": val_dataset
-    })
-
-    return dataset_dict
+    train_data = load_split(train_ann_path, "train2017")
+    val_data = load_split(val_ann_path, "val2017")
+    return train_data, val_data
 
 cache_dir = "./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -103,75 +77,76 @@ def box_to_location_tokens(box, width, height):
         get_location_token(box[3], height)   # ymax
     ]
 
-def collate_fn(examples):
-    """Collate function following PaLI-GEMMA's exact format for detection."""
-    images = [example["image"].convert("RGB") for example in examples]
+def resize_boxes(boxes, orig_size, new_size):
+    """Resize boxes to match new image size."""
+    orig_h, orig_w = orig_size
+    new_h, new_w = new_size
     
-    # Create detection prompt texts with location tokens
-    texts = []
-    labels = []
-    for example in examples:
-        boxes = example["boxes"]
-        categories = example["labels"]
-        width, height = example["image"].size
-        
-        # Get unique categories for the prefix
-        unique_categories = sorted(set(categories))
-        prefix = "detect " + " ; ".join(str(cat) for cat in unique_categories)
-        
-        # Create location tokens and labels for each object
-        detection_text = []
-        for box, category in zip(boxes, categories):
-            loc_tokens = box_to_location_tokens(box, width, height)
-            detection_text.append("".join(loc_tokens) + " " + str(category))
-        
-        # Combine with proper format
-        full_text = f"{prefix} {' ; '.join(detection_text)}"
-        texts.append(f"<image>{full_text}")
-        labels.append(full_text)
-
-    # Process inputs
-    tokens = processor(text=texts, images=images, suffix=labels, return_tensors="pt", padding="longest")
-    tokens = tokens.to(torch.bfloat16 if device == "cuda" else torch.float32)
-    return tokens
+    w_scale = new_w / orig_w
+    h_scale = new_h / orig_h
+    
+    return [[
+        box[0] * w_scale,
+        box[1] * h_scale,
+        box[2] * w_scale,
+        box[3] * h_scale
+    ] for box in boxes]
 
 class DetectionDataset(Dataset):
-    def __init__(self, dataset):
-        self.dataset = dataset
+    """Pure PyTorch Dataset for object detection."""
+    def __init__(self, data):
+        self.data = data
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        item = self.dataset[idx]
-
-        # Load image
-        image_path = item["image_path"][0]
-        image = Image.open(image_path).convert("RGB")
-
-        # Convert bbox format: [x, y, width, height] -> [x1, y1, x2, y2]
-        bbox = item["bbox"]
-        boxes = [[
-            bbox[0],
-            bbox[1],
-            bbox[0] + bbox[2],
-            bbox[1] + bbox[3]
-        ]]
-        labels = [item["category_id"]]
-
+        item = self.data[idx]
+        image = Image.open(item['image_path']).convert('RGB')
         return {
-            "image": image,
-            "boxes": boxes,
-            "labels": labels
+            'image': image,
+            'boxes': torch.tensor(item['boxes']),  # Convert to tensor
+            'labels': item['categories'] 
         }
 
-def load_balloon_dataset():
-    """Load and prepare the balloon dataset."""
-    ds = load_dataset('frgfm/balloon', split="train")
-    
-    # Split into train and validation
-    ds = ds.train_test_split(test_size=0.2)
-    return ds["train"], ds["test"]
+def collate_fn(examples):
+    """Collate function that handles both training and visualization."""
+    # Collect basic data
+    images = [ex['image'] for ex in examples]
+    boxes = [ex['boxes'] for ex in examples]
+    labels = [ex['labels'] for ex in examples]
+    for l in labels:
+        if len(set(l))==2:
+            print("kk")
+
+    orig_sizes = [img.size[::-1] for img in images]  # (h, w)
+    target_size = (224, 224)
+
+    texts = []       # prompt (prefix) sent to the model
+    text_labels = [] # target outputs for the model
+
+    for boxes_per_img, categories, orig_size in zip(boxes, labels, orig_sizes):
+        boxes_resized = resize_boxes(boxes_per_img.tolist(), orig_size, target_size)
+        unique_cats = sorted(set(categories))
+        prefix = "detect " + " ; ".join(str(cat) for cat in unique_cats)
+
+        detections = []
+        for box, cat in zip(boxes_resized, categories):
+            loc_tokens = box_to_location_tokens(box, target_size[1], target_size[0])
+            detections.append("".join(loc_tokens) + " " + str(cat))
+        
+        # Now, use prefix as the instruction and detections as the target
+        texts.append(f"<image>{prefix}")
+        text_labels.append(" ; ".join(detections))
+
+    tokens = processor(
+        text=texts,
+        images=images,
+        suffix=text_labels,
+        return_tensors="pt",
+        padding="longest"
+    )
+    return tokens.to(torch.bfloat16).to(device)
 
 def train_paligemma(
     train_dataset=None,
@@ -208,7 +183,7 @@ def train_paligemma(
             num_workers=0,
             collate_fn=collate_fn
         )
-        visualize_ground_truth(val_loader, output_dir="output/gt_visualizations", epoch=0)
+        visualize_ground_truth(val_dataset, output_dir="output/gt_visualizations", epoch=0)
     
 
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -312,7 +287,7 @@ def train_paligemma(
                 processor.save_pretrained(os.path.join(checkpoint_dir, "best_model"))
         
         if (epoch + 1) % visualize_every_n_epochs == 0 and val_dataset:
-            visualize_ground_truth(val_loader, output_dir="output/gt_visualizations", epoch=epoch + 1)
+            visualize_ground_truth(val_dataset, output_dir="output/gt_visualizations", epoch=epoch + 1)
             visualize_predictions(model, processor, val_loader, output_dir="output/pred_visualizations", epoch=epoch + 1)
     
     return model, processor
@@ -339,13 +314,13 @@ if __name__ == "__main__":
     images_dir = "/home/asad/dev/GLIP/DATASET/coco/"  
 
     # Load custom COCO subset
-    dataset_dict = load_coco_subset(train_ann_path, val_ann_path, images_dir)
+    train_data, val_data = load_coco_subset(train_ann_path, val_ann_path, images_dir)
 
     
     # Train model
     model, processor = train_paligemma(
-        train_dataset=dataset_dict["train"],
-        val_dataset=dataset_dict["val"],
+        train_dataset=train_data,
+        val_dataset=val_data,
         num_epochs=5,
         batch_size=2,
         learning_rate=2e-5,

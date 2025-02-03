@@ -104,23 +104,22 @@ def visualize_ground_truth(dataloader, output_dir="output/gt_visualizations", ep
     os.makedirs(output_dir, exist_ok=True)
     
     for batch_idx, batch in enumerate(dataloader):
-        images = batch["image"]
+        # btach is just single item its not dataloder but dataset
+        image = batch["image"]
         boxes_list = batch["boxes"]
         labels_list = batch["labels"]
+        img = image.convert("RGB")
+        draw = ImageDraw.Draw(img)
         
-        for idx, (image, boxes, labels) in enumerate(zip(images, boxes_list, labels_list)):
-            # Convert image to PIL format
-            img = image.convert("RGB")
-            draw = ImageDraw.Draw(img)
-            
-            for box, label in zip(boxes, labels):
-                draw.rectangle(box, outline="red", width=2)
-                draw.text((box[0], box[1]), str(label), fill="red")
+        for idx, (box, label) in enumerate(zip(boxes_list, labels_list)):
+            # Convert image to PIL format       
+            draw.rectangle(box.numpy(), outline="red", width=2)
+            draw.text((box[0], box[1]), str(label), fill="red")
             
             # Save the image
-            save_path = os.path.join(output_dir, f"epoch_{epoch}_batch_{batch_idx}_img_{idx}.png")
-            img.save(save_path)
-            print(f"Saved GT visualization: {save_path}")
+        save_path = os.path.join(output_dir, f"epoch_{epoch}_batch_{batch_idx}_img_{idx}.png")
+        img.save(save_path)
+        print(f"Saved GT visualization: {save_path}")
 
 
 

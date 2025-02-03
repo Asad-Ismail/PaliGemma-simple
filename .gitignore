@@ -173,4 +173,6 @@ hf_assets/
 hf_dataset/
 .vscode/
 paligemma_checkpoints/
+paligemma_detection_checkpoints/
+output/
 
