@@ -177,3 +177,8 @@ paligemma_detection_checkpoints/
 output/
 visualizations/
 wandb/
+
+# Add these lines to .gitignore
+.env
+*.token
+secrets.py
