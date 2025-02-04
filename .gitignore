@@ -176,3 +176,4 @@ paligemma_checkpoints/
 paligemma_detection_checkpoints/
 output/
 visualizations/
+wandb/

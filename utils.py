@@ -246,7 +246,7 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
             # Save the image
             save_path = os.path.join(output_dir, f"{idx}_comparison.png")
             img.save(save_path)
-            print(f"Saved visualization with both GT and predictions: {save_path}")
+            #print(f"Saved visualization with both GT and predictions: {save_path}")
 
 
 def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save_dir="visualization_results", device="cuda"):
@@ -310,3 +310,30 @@ def visualize_predictions_vqa(model, processor, val_dataset, num_samples=4, save
             save_path = os.path.join(save_dir, f"sample_{idx+1}_predictions.png")
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
             plt.close(fig)
+
+
+def compute_grad_norm(model):
+    """Compute gradient norm for monitoring."""
+    total_norm = 0
+    for p in model.parameters():
+        if p.grad is not None:
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+    return total_norm ** 0.5
+
+def get_parameter_statistics(model):
+    """Get mean and std of parameter values by layer type."""
+    stats = {}
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            layer_type = name.split('.')[0]  # Get top-level module name
+            if layer_type not in stats:
+                stats[layer_type] = {'mean': [], 'std': []}
+            stats[layer_type]['mean'].append(param.data.mean().item())
+            stats[layer_type]['std'].append(param.data.std().item())
+    
+    # Aggregate stats
+    return {k: {
+        'mean': np.mean(v['mean']),
+        'std': np.mean(v['std'])
+    } for k, v in stats.items()}
