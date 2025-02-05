@@ -1,8 +1,43 @@
 # PaliGemma-Simple
 
-**PaliGemma** is a versatile, open-source Vision-Language Model (VLM) designed for broad knowledge transfer across various tasks. This repository provides an in-depth explanation of the model's architecture and fine-tuning process.
+## In this Repo:
 
-## Overview
+**PaliGemma** is a versatile, open weight Vision-Language Model (VLM) designed for broad knowledge transfer across various tasks. This repository finetune this model on VQA and custom object detction dataset, we also explore working of paliGemma Model an in-depth explanation of the model's architecture and fine-tuning process.
+
+
+## Qualitative Results
+
+Visualizations after training on small (5k) dogs and cats **Detection** dataset and testing on some validation dataset, Green boxes are GT and blue boxes are predictions.
+
+**Before Fine-tuning**: On left visualizations of results before fientuning
+
+**After Fine-tuning**: On Right visualizations of results after fientuning
+
+
+
+<div align="center">
+ <p float="left" align="middle">
+   <img src="vis/initial/5_comparison.png" width="200" height="300"/>
+   <img src="vis/finetune/5_comparison.png" width="200" height="300"/>
+ </p>
+</div>
+
+<div align="center">
+ <p float="left" align="middle">
+   <img src="vis/initial/6_comparison.png" width="200" height="200"/>
+   <img src="vis/finetune/6_comparison.png" width="200" height="200"/>
+ </p>
+</div>
+<div align="center">
+ <p float="left" align="middle">
+   <img src="vis/initial/28_comparison.png" width="200" height="200"/>
+   <img src="vis/finetune/28_comparison.png" width="200" height="200"/>
+ </p>
+</div>
+
+The main purpose of PaliGemma is not Object detection and if that is the main purpose its best to use OD specific network but it shows how we can fine tune token prediction model for OD also and also add many other tasks.
+
+## How PaliGemma Works
 
 PaliGemma combines a **SigLIP-So400m** vision encoder with a **Gemma-2B** language model to create a broadly knowledgeable base model that can be effectively transferred to a variety of tasks. The model's architecture consists of three main components:
 
