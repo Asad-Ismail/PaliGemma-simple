@@ -37,7 +37,7 @@ Visualizations after training on small (5k) dogs and cats **Detection** dataset 
 
 The main purpose of PaliGemma is not Object detection and if that is the main purpose its best to use OD specific network but it shows how we can fine tune token prediction model for OD also and also add many other tasks.
 
-## How PaliGemma Works
+## How PaliGemma Works?
 
 PaliGemma combines a **SigLIP-So400m** vision encoder with a **Gemma-2B** language model to create a broadly knowledgeable base model that can be effectively transferred to a variety of tasks. The model's architecture consists of three main components:
 
