@@ -173,10 +173,10 @@ def visualize_predictions_od(model, processor, dataset, output_dir="output/pred_
                     class_text = match.groups()[-1].strip()
                     
                     # Convert coordinates from 1024-scale to target size
-                    xmin = max(0, min((coords[0] / 1024) * target_size[1], target_size[1]))
-                    ymin = max(0, min((coords[1] / 1024) * target_size[0], target_size[0]))
-                    xmax = max(0, min((coords[2] / 1024) * target_size[1], target_size[1]))
-                    ymax = max(0, min((coords[3] / 1024) * target_size[0], target_size[0]))
+                    ymin = max(0, min((coords[0] / 1024) * target_size[0], target_size[0]))
+                    xmin = max(0, min((coords[1] / 1024) * target_size[1], target_size[1]))
+                    ymax = max(0, min((coords[2] / 1024) * target_size[0], target_size[0]))
+                    xmax = max(0, min((coords[3] / 1024) * target_size[1], target_size[1]))
                     
                     # Ensure box coordinates are valid
                     if xmin < xmax and ymin < ymax:
