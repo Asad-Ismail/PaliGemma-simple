@@ -42,11 +42,12 @@ def get_location_token(coord, scale_factor):
 
 def box_to_location_tokens(box, width, height):
     """Convert box coordinates [xmin, ymin, xmax, ymax] to location tokens."""
+    # This is how paligemma is trained y coordinates are before x weired but lets do it same way so model does not have to relearn the mapping
     return [
-        get_location_token(box[0], width),   # xmin
         get_location_token(box[1], height),  # ymin
+        get_location_token(box[0], width),   # xmin
+        get_location_token(box[3], height),  # ymax
         get_location_token(box[2], width),   # xmax
-        get_location_token(box[3], height)   # ymax
     ]
 
 
@@ -216,7 +217,7 @@ def train_paligemma(
             outputs = model(**batch)
             loss = outputs.loss
             
-            # Backward pass
+            # Backward passs
             loss.backward()
             
             # Gradient clipping
