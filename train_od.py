@@ -171,7 +171,7 @@ def train_paligemma(
         bias="none"
     )
 
-    #model = get_peft_model(model, lora_config)
+    model = get_peft_model(model, lora_config)
     
     # Enable input gradients before gradient checkpointing
     model.enable_input_require_grads()
@@ -221,8 +221,8 @@ def train_paligemma(
             loss.backward()
             
             # Gradient clipping
-            grad_norm = clip_grad_norm_(model.parameters(), max_grad_norm)
-            epoch_grad_norms.append(grad_norm)
+            #grad_norm = clip_grad_norm_(model.parameters(), max_grad_norm)
+            #epoch_grad_norms.append(grad_norm)
             
             # Optimizer step
             optimizer.step()
@@ -230,14 +230,12 @@ def train_paligemma(
             # Scheduler step
             scheduler.step()
             
-            global_step += 1
-            
             # Log training metrics
             if global_step % 100 == 0:
                 param_stats = get_parameter_statistics(model)
                 wandb.log({
                     "train/loss": loss.item(),
-                    "train/grad_norm": grad_norm,
+                    #"train/grad_norm": grad_norm,
                     "train/learning_rate": optimizer.param_groups[0]['lr'],
                     **{f"params/{k}/mean": v['mean'] for k, v in param_stats.items()},
                     **{f"params/{k}/std": v['std'] for k, v in param_stats.items()},
@@ -277,6 +275,8 @@ def train_paligemma(
                     os.makedirs(viz_subdir, exist_ok=True)
                     visualize_predictions_od(model, processor, val_dataset, output_dir=viz_subdir, epoch=epoch + 1)
                     model.train()
+            global_step += 1
+            
     wandb.finish()
     return model, processor
 

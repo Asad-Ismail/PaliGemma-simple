@@ -17,25 +17,19 @@ Visualizations after training on small (5k) dogs and cats **Detection** dataset 
 
 <div align="center">
  <p float="left" align="middle">
-   <img src="vis/initial/5_comparison.png" width="200" height="300"/>
-   <img src="vis/finetune/5_comparison.png" width="200" height="300"/>
+   <img src="vis/initial/24_comparison.png" width="200" height="300"/>
+   <img src="vis/finetune/24_comparison.png" width="200" height="300"/>
  </p>
 </div>
 
 <div align="center">
  <p float="left" align="middle">
-   <img src="vis/initial/6_comparison.png" width="200" height="200"/>
-   <img src="vis/finetune/6_comparison.png" width="200" height="200"/>
- </p>
-</div>
-<div align="center">
- <p float="left" align="middle">
-   <img src="vis/initial/28_comparison.png" width="200" height="200"/>
-   <img src="vis/finetune/28_comparison.png" width="200" height="200"/>
+   <img src="vis/initial/70_comparison.png" width="200" height="200"/>
+   <img src="vis/finetune70_comparison.png" width="200" height="200"/>
  </p>
 </div>
 
-The main purpose of PaliGemma is not Object detection and if that is the main purpose its best to use OD specific network but it shows how we can fine tune token prediction model for OD also and also add many other tasks.
+The main purpose of PaliGemma is not Object detection (although it can be fine tune for that purpose and performs reasonably) and if that is the main purpose its best to use OD specific network it will much more efficient and accurate, but it shows how we can fine tune token prediction model for OD also and also add many other tasks.
 
 ## How PaliGemma Works?
 
