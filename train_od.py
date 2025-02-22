@@ -17,15 +17,12 @@ from torch.nn.utils import clip_grad_norm_
 from utils import get_parameter_statistics, compute_grad_norm
 from transformers import get_linear_schedule_with_warmup
 
-
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 cache_dir = "./hf_assets"
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
 
 # Initialize model and processor
 model_id = "google/paligemma-3b-mix-224"
@@ -173,15 +170,14 @@ def train_paligemma(
         bias="none"
     )
 
-    model = get_peft_model(model, lora_config)
+    #model = get_peft_model(model, lora_config)
     
     # Enable input gradients before gradient checkpointing
     model.enable_input_require_grads()
-    #model.config.use_memory_efficient_attention = True
+    model.config.use_memory_efficient_attention = True
     # Enable gradient checkpointing after setting up LoRA and input gradients
     model.gradient_checkpointing_enable()
-    
-    model.print_trainable_parameters()
+    #model.print_trainable_parameters()
     
     optimizer = AdamW(
         model.parameters(),
