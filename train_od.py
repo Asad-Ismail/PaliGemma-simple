@@ -102,6 +102,8 @@ def collate_fn(examples):
         return_tensors="pt",
         padding="longest"
     )
+    print(tokens.keys())
+    print(tokens['attention_mask'])
     return tokens.to(torch.bfloat16).to(device)
 
 def train_paligemma(
@@ -171,13 +173,13 @@ def train_paligemma(
         bias="none"
     )
 
-    model = get_peft_model(model, lora_config)
+    #model = get_peft_model(model, lora_config)
     
     # Enable input gradients before gradient checkpointing
     model.enable_input_require_grads()
     model.config.use_memory_efficient_attention = True
     # Enable gradient checkpointing after setting up LoRA and input gradients
-    model.gradient_checkpointing_enable()
+    #model.gradient_checkpointing_enable()
     #model.print_trainable_parameters()
     
     optimizer = AdamW(
@@ -221,8 +223,8 @@ def train_paligemma(
             loss.backward()
             
             # Gradient clipping
-            #grad_norm = clip_grad_norm_(model.parameters(), max_grad_norm)
-            #epoch_grad_norms.append(grad_norm)
+            grad_norm = clip_grad_norm_(model.parameters(), max_grad_norm)
+            epoch_grad_norms.append(grad_norm)
             
             # Optimizer step
             optimizer.step()
@@ -235,7 +237,7 @@ def train_paligemma(
                 param_stats = get_parameter_statistics(model)
                 wandb.log({
                     "train/loss": loss.item(),
-                    #"train/grad_norm": grad_norm,
+                    "train/grad_norm": grad_norm,
                     "train/learning_rate": optimizer.param_groups[0]['lr'],
                     **{f"params/{k}/mean": v['mean'] for k, v in param_stats.items()},
                     **{f"params/{k}/std": v['std'] for k, v in param_stats.items()},
@@ -291,17 +293,11 @@ def convert_to_training_format(example):
 
 
 if __name__ == "__main__":
-    # Load dataset
-    train_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_train2017_subset.json"
-    val_ann_path = "/home/asad/dev/GLIP/DATASET/coco/annotations/instances_val2017_subset.json"
-    images_dir = "/home/asad/dev/GLIP/DATASET/coco/"  
 
     dataset = load_dataset("AsadIsmail/coco-cats-dogs-small-Detection",cache_dir=cache_dir)
     train_data = [convert_to_training_format(example) for example in dataset['train']]
     val_data = [convert_to_training_format(example) for example in dataset['validation']]
 
-    
-    # Train model
     model, processor = train_paligemma(
         train_dataset=train_data,
         val_dataset=val_data,
