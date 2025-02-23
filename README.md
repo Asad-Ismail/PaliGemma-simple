@@ -13,19 +13,21 @@ Visualizations after training on small (5k) dogs and cats **Detection** dataset 
 
 **After Fine-tuning**: On Right visualizations of results after fientuning
 
+Although pretrained "mix" model of paligemma works quite well for this simple cats/dogs images, in the first image from validation set the bbox becomes more aalinged with GT and in second image only one dog is detected (same is true for paligemma2 model) which becomes two after finetuning. Results are just for demonstration purpose of usefulness of finetuning these models 
+
 
 
 <div align="center">
  <p float="left" align="middle">
-   <img src="vis/initial/24_comparison.png" width="200" height="300"/>
-   <img src="vis/finetune/24_comparison.png" width="200" height="300"/>
+   <img src="vis/initial/24_comparison.png" width="250" height="200"/>
+   <img src="vis/finetune/24_comparison.png" width="250" height="200"/>
  </p>
 </div>
 
 <div align="center">
  <p float="left" align="middle">
-   <img src="vis/initial/70_comparison.png" width="200" height="200"/>
-   <img src="vis/finetune70_comparison.png" width="200" height="200"/>
+   <img src="vis/initial/70_comparison.png" width="250" height="220"/>
+   <img src="vis/finetune/70_comparison.png" width="250" height="220"/>
  </p>
 </div>
 
