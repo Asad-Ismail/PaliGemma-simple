@@ -1,7 +1,5 @@
 # PaliGemma-Simple
 
-## In this Repo:
-
 **PaliGemma** is a versatile, open weight Vision-Language Model (VLM) designed for broad knowledge transfer across various tasks. This repository finetune this model on VQA and custom object detction dataset, we also explore working of paliGemma Model an in-depth explanation of the model's architecture and fine-tuning process.
 
 
@@ -13,7 +11,7 @@ Visualizations after training on small (5k) dogs and cats **Detection** dataset 
 
 **After Fine-tuning**: On Right visualizations of results after fientuning
 
-Although pretrained "mix" model of paligemma works quite well for this simple cats/dogs images, in the first image from validation set the bbox becomes more aalinged with GT and in second image only one dog is detected (same is true for paligemma2 model) which becomes two after finetuning. Results are just for demonstration purpose of usefulness of finetuning these models 
+Although pretrained "mix" model of paligemma works quite well for this simple cats/dogs images, in the first image from validation set the bbox becomes more alinged with GT and in second image only one dog is detected (same is true for paligemma2 model) which becomes more accurate after finetuning. Results are just for demonstration purpose of usefulness of finetuning these models  (we only finetune for 2000 steps and only on 1000 images)
 
 
 
