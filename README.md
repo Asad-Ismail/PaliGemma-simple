@@ -5,7 +5,7 @@
 
 ### Video Tutorial
 
-For those who prefer a visual guide, check out our video tutorial ![YouTube] <img src="https://img.icons8.com/color/48/000000/youtube-play.png" alt="YouTube" width="20" height="20"/> [here](https://www.youtube.com/watch?v=rw7VUCCeNUA&t=7s).
+For those who prefer a visual guide, check out our video tutorial !<img src="https://img.icons8.com/color/48/000000/youtube-play.png" alt="YouTube" width="20" height="20"/> [here](https://www.youtube.com/watch?v=rw7VUCCeNUA&t=7s).
 
 
 ## Qualitative Results
