@@ -3,6 +3,11 @@
 **PaliGemma** is a versatile, open weight Vision-Language Model (VLM) designed for broad knowledge transfer across various tasks. This repository finetune this model on VQA and custom object detction dataset, we also explore working of paliGemma Model an in-depth explanation of the model's architecture and fine-tuning process.
 
 
+### Video Tutorial
+
+For those who prefer a visual guide, check out our video tutorial ![YouTube](https://img.icons8.com/color/48/000000/youtube-play.png) [here](https://www.youtube.com/watch?v=rw7VUCCeNUA&t=7s).
+
+
 ## Qualitative Results
 
 Visualizations after training on small (5k) dogs and cats **Detection** dataset and testing on some validation dataset, Green boxes are GT and blue boxes are predictions.
